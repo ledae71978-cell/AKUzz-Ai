@@ -1,0 +1,49 @@
+import os, threading, yt_dlp
+from flask import Flask
+from telegram.ext import (ApplicationBuilder, CommandHandler,
+                          MessageHandler, filters)
+
+TOKEN = os.environ["BOT_TOKEN"]
+
+web = Flask(__name__)
+@web.route("/")
+def home():
+    return "bot OK"
+
+async def start(update, ctx):
+    await update.message.reply_text("សួស្តី! ផ្ញើតំណវីដេអូមក ខ្ញុំនឹងទាញយកឲ្យ។")
+
+async def handle(update, ctx):
+    url = update.message.text.strip()
+    if not url.startswith("http"):
+        return await update.message.reply_text("សូមផ្ញើតំណ (link) វីដេអូ")
+    msg = await update.message.reply_text("កំពុងទាញយក... ⏳")
+    opts = {
+        "quiet": True,
+        "noplaylist": True,
+        "format": "best[ext=mp4][filesize<45M]/best[ext=mp4]/best",
+        "outtmpl": "/tmp/%(id)s.%(ext)s",
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            path = ydl.prepare_filename(info)
+        if os.path.getsize(path) > 49 * 1024 * 1024:
+            await msg.edit_text("ឯកសារធំពេក (លើស 50MB) Telegram មិនអនុញ្ញាតទេ")
+        else:
+            with open(path, "rb") as f:
+                await update.message.reply_video(f)
+            await msg.delete()
+        os.remove(path)
+    except Exception as e:
+        await msg.edit_text("បរាជ័យ៖ " + str(e)[:150])
+
+def run_web():
+    web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
+if __name__ == "__main__":
+    threading.Thread(target=run_web, daemon=True).start()
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+    app.run_polling()
